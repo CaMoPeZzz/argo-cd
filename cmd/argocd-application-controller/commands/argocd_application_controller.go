@@ -59,6 +59,7 @@ func NewCommand() *cobra.Command {
 		metricsPort                      int
 		metricsCacheExpiration           time.Duration
 		metricsAplicationLabels          []string
+		metricsImages                    bool
 		kubectlParallelismLimit          int64
 		cacheSource                      func() (*appstatecache.Cache, error)
 		redisClient                      *redis.Client
@@ -164,6 +165,7 @@ func NewCommand() *cobra.Command {
 				metricsPort,
 				metricsCacheExpiration,
 				metricsAplicationLabels,
+				metricsImages,
 				kubectlParallelismLimit,
 				persistResourceHealth,
 				clusterSharding,
@@ -233,6 +235,7 @@ func NewCommand() *cobra.Command {
 	command.Flags().BoolVar(&enableDynamicClusterDistribution, "dynamic-cluster-distribution-enabled", env.ParseBoolFromEnv(common.EnvEnableDynamicClusterDistribution, false), "Enables dynamic cluster distribution.")
 	command.Flags().BoolVar(&serverSideDiff, "server-side-diff-enabled", env.ParseBoolFromEnv(common.EnvServerSideDiff, false), "Feature flag to enable ServerSide diff. Default (\"false\")")
 	command.Flags().DurationVar(&ignoreNormalizerOpts.JQExecutionTimeout, "ignore-normalizer-jq-execution-timeout-seconds", env.ParseDurationFromEnv("ARGOCD_IGNORE_NORMALIZER_JQ_TIMEOUT", 0*time.Second, 0, math.MaxInt64), "Set ignore normalizer JQ execution timeout")
+	command.Flags().BoolVar(&metricsImages, "metrics-images", env.ParseBoolFromEnv("ARGOCD_METRICS_IMAGES", true), "Enables argocd_app_image metric")
 	cacheSource = appstatecache.AddCacheFlagsToCmd(&command, cacheutil.Options{
 		OnClientCreated: func(client *redis.Client) {
 			redisClient = client

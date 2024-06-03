@@ -141,10 +141,17 @@ var (
 		},
 		[]string{"hostname", "initiator"},
 	)
+
+	descAppImages = prometheus.NewDesc(
+		"argocd_app_image",
+		"Application image.",
+		append(descAppDefaultLabels, "dest_server", "dest_namespace", "image"),
+		nil,
+	)
 )
 
 // NewMetricsServer returns a new prometheus server which collects application metrics
-func NewMetricsServer(addr string, appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, healthCheck func(r *http.Request) error, appLabels []string) (*MetricsServer, error) {
+func NewMetricsServer(addr string, appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, healthCheck func(r *http.Request) error, appLabels []string, enableAppImages bool) (*MetricsServer, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, err
@@ -161,7 +168,7 @@ func NewMetricsServer(addr string, appLister applister.ApplicationLister, appFil
 	}
 
 	mux := http.NewServeMux()
-	registry := NewAppRegistry(appLister, appFilter, appLabels)
+	registry := NewAppRegistry(appLister, appFilter, appLabels, enableAppImages)
 
 	mux.Handle(MetricsPath, promhttp.HandlerFor(prometheus.Gatherers{
 		// contains app controller specific metrics
@@ -307,24 +314,26 @@ func (m *MetricsServer) SetExpiration(cacheExpiration time.Duration) error {
 }
 
 type appCollector struct {
-	store     applister.ApplicationLister
-	appFilter func(obj interface{}) bool
-	appLabels []string
+	store           applister.ApplicationLister
+	appFilter       func(obj interface{}) bool
+	appLabels       []string
+	enableAppImages bool
 }
 
 // NewAppCollector returns a prometheus collector for application metrics
-func NewAppCollector(appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, appLabels []string) prometheus.Collector {
+func NewAppCollector(appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, appLabels []string, enableAppImages bool) prometheus.Collector {
 	return &appCollector{
-		store:     appLister,
-		appFilter: appFilter,
-		appLabels: appLabels,
+		store:           appLister,
+		appFilter:       appFilter,
+		appLabels:       appLabels,
+		enableAppImages: enableAppImages,
 	}
 }
 
 // NewAppRegistry creates a new prometheus registry that collects applications
-func NewAppRegistry(appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, appLabels []string) *prometheus.Registry {
+func NewAppRegistry(appLister applister.ApplicationLister, appFilter func(obj interface{}) bool, appLabels []string, enableAppImages bool) *prometheus.Registry {
 	registry := prometheus.NewRegistry()
-	registry.MustRegister(NewAppCollector(appLister, appFilter, appLabels))
+	registry.MustRegister(NewAppCollector(appLister, appFilter, appLabels, enableAppImages))
 	return registry
 }
 
@@ -336,6 +345,9 @@ func (c *appCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- descAppInfo
 	ch <- descAppSyncStatusCode
 	ch <- descAppHealthStatus
+	if c.enableAppImages {
+		ch <- descAppImages
+	}
 }
 
 // Collect implements the prometheus.Collector interface
@@ -395,6 +407,12 @@ func (c *appCollector) collectApps(ch chan<- prometheus.Metric, app *argoappv1.A
 			labelValues = append(labelValues, value)
 		}
 		addGauge(descAppLabels, 1, labelValues...)
+	}
+
+	if c.enableAppImages {
+		for _, image := range app.Status.Summary.Images {
+			addGauge(descAppImages, 1, app.Spec.Destination.Server, app.Spec.Destination.Namespace, image)
+		}
 	}
 
 	// Deprecated controller metrics
